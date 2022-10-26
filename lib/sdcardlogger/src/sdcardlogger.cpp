@@ -73,7 +73,9 @@ void SDcardLogger::dump2sdcard(std::vector<double> data)
 
   for(auto d : data)
   {
-    rb.print(d);
+    char buf[] = {};
+    dtostrf(d, 10, 5, buf);
+    rb.write(buf);
     rb.write(',');
   }
   rb.println("");

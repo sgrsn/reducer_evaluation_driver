@@ -15,6 +15,7 @@ public:
   static QEI * instance0_;
     
   float getDegree();
+  float getRadians();
   bool IsInterruptZ();
  
 private:

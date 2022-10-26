@@ -33,11 +33,17 @@ void QEI::init()
   position = 0;
   _IsInterrupt = false;
 }
+
+float QEI::getRadians()
+{
+    return float(position) * 2*M_PI/(_ppr*4.0);
+}
  
 float QEI::getDegree()
 {
     return float(position) * 360.0/(_ppr*4.0);
 }
+
  
 bool QEI::IsInterruptZ()
 {
