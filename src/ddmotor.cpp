@@ -8,22 +8,26 @@
 
 #include <mtl/mtl_ddmotor_driver.hpp>
 #include <sdcardlogger/sdcardlogger.hpp>
+#include <LPF/lowpass_filter.hpp>
 
-const char exp_file_name[]  = "ddmotor_test_log.csv";
-const double ddmotor_torque = 0.5;
-const double break_torque   = 0.5;
-const double exp_time = 4.0;
+const char exp_file_name[]  = "exp1026_0d3_0b0_.csv";
+const double ddmotor_torque = 0.05;
+const double break_torque   = 0.0;
+const double exp_time = 3.0;
 
 double start_time = 0.0;
 
 #define SS_PIN 9
 #define TORQUE_PIN 27
-#define RATE 25.0
+#define RATE 100.0
 
 SDcardLogger logger(exp_file_name);
 MTL::Driver driver;
 DAC_MCP49xx dac(DAC_MCP49xx::MCP4922, SS_PIN);
 uint8_t buf[64] = {};
+
+LowPassFilter::Param lpf_param = {1.0, 1.0};
+LowPassFilter torque_lpf(lpf_param, 1./RATE);
 
 void InfoState();
 void SetupState();
@@ -92,6 +96,8 @@ void InfoState(){
     Serial.println("Info State");
     Serial.println("Please set the sdcard");
   }
+  double pos = driver.pos_radians();
+  Serial.println(pos);
 }
 
 bool transitionInfoToSetup(){
@@ -124,7 +130,7 @@ void SetupState(){
     Serial.println("ok");
     Serial.println("Setup has been completed.");
     Serial.println("Please press any key to switch control ON/OFF");
-    logger.dump2sdcard(std::vector<std::string>{"Time [ms]", "DDmotor Torque [Nm]", "Break Torque [Nm", "Torque Sensor [Nm]", "DDmotor position [rad]"});
+    logger.dump2sdcard(std::vector<std::string>{"Time [ms]", "DDmotor Torque [Nm]", "Break Torque [Nm]", "Torque Sensor [Nm]", "DDmotor position [rad]"});
   }
 }
 
@@ -153,15 +159,14 @@ void ControlState(){
     Serial.println("Control State");
     start_time = millis();
   }
-
   int torque_in = analogRead(TORQUE_PIN);
   double torque_voltage = (torque_in * 3.3 / 1024 - 2.5) * 2.;
   double torque = torque_voltage * 20. / 5. - torque_offset;
+  double filtered_torque = torque_lpf.update(torque);
   double pos = driver.pos_radians();
-
-  setMotorTorque(ddmotor_torque);
+  double dd_current_torque = ddmotor_torque * (double)(millis()-start_time)/1000. / exp_time;
+  setMotorTorque(dd_current_torque);
   setBreakTorque(break_torque);
-
   /*std::stringstream ss;
   ss.str("");
   ss << std::fixed;
@@ -171,16 +176,16 @@ void ControlState(){
   ss << "pos:" << pos * RAD_TO_DEG << " [deg]";
   Serial.println(ss.str().c_str());*/
   Serial.print("DDMotor[Nm] : ");
-  Serial.print(ddmotor_torque);
+  Serial.print(dd_current_torque);
   Serial.print(", Break[Nm] : ");
   Serial.print(break_torque);
   Serial.print(", Sensor[Nm] : ");
-  Serial.print(torque);
+  Serial.print(filtered_torque);
   Serial.print(", Position[rad] : ");
   Serial.print(pos);
   Serial.println("");
 
-  logger.dump2sdcard(std::vector<double>{millis()-start_time, ddmotor_torque, break_torque, torque, pos});
+  logger.dump2sdcard(std::vector<double>{millis()-start_time, dd_current_torque, break_torque, filtered_torque, pos});
 }
 
 bool transitionControlToStop(){
@@ -240,6 +245,10 @@ void setMotorTorque(double torque)
   if(torque > torque_max) torque = torque_max;
   else if(torque < 0) torque = 0;
   dac.outputB((unsigned short)(torque * 4095));
+  /*[Nm] = 4.713[A]  * 0.3[Nm/A]/sqrt(2)) */
+  //5[V] =  4.713[A]  * 0.3[Nm/A]/sqrt(2)) * 5[V/Nm]
+  //100[%] =  4.713[A]  * 0.3[Nm/A]/sqrt(2)) * 5[V/Nm] * 100/5[/V]
+
 }
 
 void serialEvent()
@@ -261,6 +270,11 @@ void serialEvent2()
     if(read_8bytes_enable)
     {
       Serial2.readBytes(buf, 8);
+      if(buf[0] != 0x00)
+      {
+        read_8bytes_enable = false;
+        next_first_byte = false;
+      }
       uint8_t data[7] = {};
       for(int i = 0; i < 7; i++) data[i] = buf[i+1];
       driver.decode(data, 7);

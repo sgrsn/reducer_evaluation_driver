@@ -11,17 +11,18 @@
 #include <sdcardlogger/sdcardlogger.hpp>
 #include <LPF/lowpass_filter.hpp>
 
-const char exp_file_name[]  = "exp1026_oneA_0d2_0b5.csv";
-const double ddmotor_torque = 0.2;
-const double break_torque   = 0.5;
+const char exp_file_name[]  = "exp1028_20rpm_break10.csv";
+const double ddmotor_speed = 20; //[rpm]
+const double ddmotor_torque = ddmotor_speed / 200.0;
+const double break_torque   = 1.0;
 const double ramp_time = 3.0;
-const double exp_time = 4.0;
+const double exp_time = 8.0;
 
 double start_time = 0.0;
 
 #define SS_PIN 9
 #define TORQUE_PIN 27
-#define RATE 100.0
+#define RATE 300.0
 
 SDcardLogger logger(exp_file_name);
 MTL::Driver driver;
@@ -169,9 +170,11 @@ void ControlState(){
   double pos = driver.pos_radians();
   double output_pos = encoder.getRadians();
   double dd_current_torque = ddmotor_torque * (double)(millis()-start_time)/1000. / ramp_time;
+  double break_current_torque = break_torque * (double)(millis()-start_time)/1000. / ramp_time;
   if(dd_current_torque > ddmotor_torque) dd_current_torque = ddmotor_torque;
+  if(break_current_torque > break_torque) break_current_torque = break_torque;
   setMotorTorque(dd_current_torque);
-  setBreakTorque(break_torque);
+  setBreakTorque(break_current_torque);
   /*std::stringstream ss;
   ss.str("");
   ss << std::fixed;
@@ -183,7 +186,7 @@ void ControlState(){
   Serial.print("DDMotor[Nm] : ");
   Serial.print(dd_current_torque);
   Serial.print(", Break[Nm] : ");
-  Serial.print(break_torque);
+  Serial.print(break_current_torque);
   Serial.print(", Sensor[Nm] : ");
   Serial.print(filtered_torque);
   Serial.print(", Input[rad] : ");
@@ -192,7 +195,7 @@ void ControlState(){
   Serial.print(output_pos);
   Serial.println("");
 
-  logger.dump2sdcard(std::vector<double>{millis()-start_time, dd_current_torque, break_torque, filtered_torque, pos, output_pos});
+  logger.dump2sdcard(std::vector<double>{millis()-start_time, dd_current_torque, break_current_torque, filtered_torque, pos, output_pos});
 }
 
 bool transitionControlToStop(){
